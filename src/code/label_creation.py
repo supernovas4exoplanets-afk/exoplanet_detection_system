@@ -10,75 +10,69 @@ def create_labeled_dataset(
     all_sector_tics: list
 ) -> pd.DataFrame:
     """
-    Consolidates catalogs to generate a labeled dataset for the exoplanet pipeline.
+    Consolidates catalogs to generate a highly detailed labeled dataset 
+    preserving all distinct astronomical states.
     
     Classes:
-    0: Confirmed Planets
-    1: False Positives / Eclipsing Binaries
-    2: Null / Noise Baseline
-    3: Variable / Other Astrophysical Objects
+    0: Confirmed Planets (TOI CP/KP)
+    1: Planet Candidates (TOI PC/APC)
+    2: False Positives / False Alarms (TOI FP/FA)
+    3: Eclipsing Binaries (TESS-EB Catalog)
+    4: Variable / Pulsating Stars (TESS-SVC Catalog)
+    5: Null / Noise Baseline (Unobserved background stars)
     """
     
-    # ---------------------------------------------------------
-    # Step 1: TOI Catalog Processing
-    # ---------------------------------------------------------
-    # Keep only specific dispositions and drop 'PC' and 'APC'
-    # Official column in downloaded TOI catalog: 'tfopwg_disp', TIC ID: 'tid'
-    valid_toi_mask = toi_df['tfopwg_disp'].isin(['CP', 'KP', 'FP', 'FA'])
-    toi_filtered = toi_df[valid_toi_mask].copy()
+    # Ensure IDs are integers
+    toi_df['tid'] = toi_df['tid'].astype(int)
+    eb_df['tess_id'] = eb_df['tess_id'].astype(int)
+    svc_df['tess_id'] = svc_df['tess_id'].astype(int)
     
-    # Map to classes
-    # CP (Confirmed Planet), KP (Known Planet) -> Class 0
-    # FP (False Positive), FA (False Alarm) -> Class 1
+    # ---------------------------------------------------------
+    # Step 1: TOI Catalog Processing (Classes 0, 1, 2)
+    # ---------------------------------------------------------
     def map_toi_label(disp):
         if disp in ['CP', 'KP']:
-            return 0
+            return 0  # Confirmed Planets
+        elif disp in ['PC', 'APC']:
+            return 1  # Planet Candidates
         elif disp in ['FP', 'FA']:
-            return 1
+            return 2  # False Positives / False Alarms
         return None
         
-    toi_filtered['label'] = toi_filtered['tfopwg_disp'].apply(map_toi_label)
+    toi_df['label'] = toi_df['tfopwg_disp'].apply(map_toi_label)
     
-    # Dictionary to keep track of TIC to Label mapping to handle collisions easily
-    # Ensure TIC IDs are integers
-    toi_filtered['tid'] = toi_filtered['tid'].astype(int)
-    tic_to_label = dict(zip(toi_filtered['tid'], toi_filtered['label']))
+    # Drop rows without matching label map
+    toi_mapped = toi_df[toi_df['label'].notna()].copy()
+    toi_mapped['label'] = toi_mapped['label'].astype(int)
+    
+    # Dict mapping TIC -> label
+    tic_to_label = dict(zip(toi_mapped['tid'], toi_mapped['label']))
     
     # ---------------------------------------------------------
-    # Step 2: Eclipsing Binary (EB) Catalog Processing
+    # Step 2: Eclipsing Binary (EB) Catalog Processing (Class 3)
     # ---------------------------------------------------------
-    # Official column in EB catalog: 'tess_id'
-    eb_df['tess_id'] = eb_df['tess_id'].astype(int)
     for tic in eb_df['tess_id']:
-        # Assign Class 1 to EB stars
-        # Default to TOI authority if collision exists (only overwrite if not in TOI)
-        if tic not in tic_to_label:
-            tic_to_label[tic] = 1
-
-    # ---------------------------------------------------------
-    # Step 3: TESS Standard Variable Catalog (SVC) Processing
-    # ---------------------------------------------------------
-    # Official column in SVC catalog: 'tess_id'
-    svc_df['tess_id'] = svc_df['tess_id'].astype(int)
-    for tic in svc_df['tess_id']:
-        # Assign Class 3 to Variable stars
-        # Discard if it overlaps with planetary or binary sets
+        # Assign Class 3 to Eclipsing Binaries
+        # If already mapped in TOI, keep the TOI disposition as authority
         if tic not in tic_to_label:
             tic_to_label[tic] = 3
 
     # ---------------------------------------------------------
-    # Step 4: Establish the Null/Noise Baseline
+    # Step 3: TESS Standard Variable Catalog (SVC) Processing (Class 4)
     # ---------------------------------------------------------
-    # Convert list elements to int
+    for tic in svc_df['tess_id']:
+        # Assign Class 4 to Variable stars
+        # Keep existing TOI or EB classification if there is a collision
+        if tic not in tic_to_label:
+            tic_to_label[tic] = 4
+
+    # ---------------------------------------------------------
+    # Step 4: Establish the Null/Noise Baseline (Class 5)
+    # ---------------------------------------------------------
     all_sector_tics = [int(tic) for tic in all_sector_tics]
     for tic in all_sector_tics:
         if tic not in tic_to_label:
-            # Check if this TIC was discarded from TOI (i.e. it was a PC or APC)
-            # We want to fully discard those, not even include them in noise
-            is_pc_or_apc = not toi_df[(toi_df['tid'] == tic) & (toi_df['tfopwg_disp'].isin(['PC', 'APC']))].empty
-            
-            if not is_pc_or_apc:
-                tic_to_label[tic] = 2
+            tic_to_label[tic] = 5
 
     # ---------------------------------------------------------
     # Step 5: Consolidate
@@ -121,7 +115,6 @@ def extract_tics_from_filenames(fits_dir: str) -> list:
     
     for fits_path in fits_files:
         filename = os.path.basename(fits_path)
-        # Extract TIC ID (e.g., search for a series of digits in the filename)
         match = re.search(r'_(\d+)-s\d+_', filename)
         if match:
             tic_ids.append(int(match.group(1).lstrip("0") or "0"))
@@ -129,7 +122,6 @@ def extract_tics_from_filenames(fits_dir: str) -> list:
     return list(set(tic_ids))
 
 if __name__ == "__main__":
-    # Define file paths
     toi_path = "data/toi/toi_catalog.csv"
     eb_path = "data/TESS-EB/hlsp_tess-ebs_tess_lcf-ffi_s0001-s0026_tess_v1.0_cat.csv"
     svc_path = "data/TESS-SVC/hlsp_tess-svc_tess_lcf_acf-s0001-s0026_tess_v1.0_cat.csv"
@@ -141,7 +133,6 @@ if __name__ == "__main__":
     svc_df = pd.read_csv(svc_path)
     
     # Check for downloaded FITS files (light curves)
-    # Defaulting to the Downloads folder or a specific target directory
     light_curves_dir = os.path.expanduser("~/Downloads/light_curves")
     downloaded_tics = extract_tics_from_filenames(light_curves_dir)
     
@@ -156,4 +147,4 @@ if __name__ == "__main__":
     
     # Show class counts
     print("\nClass Counts:")
-    print(labeled_df['label'].value_counts())
+    print(labeled_df['label'].value_counts().sort_index())
