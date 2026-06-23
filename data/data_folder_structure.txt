@@ -1,0 +1,8 @@
+data/
+├── TESS-EB/
+│   └── hlsp_tess-ebs_tess_lcf-ffi_s0001-s0026_tess_v1.0_cat.csv  <-- Eclipsing Binary Catalog
+├── TESS-SVC/
+│   └── hlsp_tess-svc_tess_lcf_acf-s0001-s0026_tess_v1.0_cat.csv  <-- Variable Star Catalog (ACF/All version)
+├── toi/
+│   └── toi_catalog.csv                                           <-- TOI catalog (downloaded via download_toi.py)
+└── light_curves/                                                 <-- Raw TESS FITS light curves downloaded from MAST

@@ -1,3 +1,17 @@
+# Private docs
+/privatedocs/
+
+# data
+/data/TESS-EB/
+/data/TESS-SVC/
+/data/toi/
+/data/light_curves/
+/data/TIC_*.csv
+/data/labeled_targets.csv
+
+# scratch
+/scratch/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
