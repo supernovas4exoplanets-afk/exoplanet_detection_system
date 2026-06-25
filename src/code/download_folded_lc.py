@@ -110,7 +110,6 @@ for _, row in df_toi.iterrows():
         )
 
 # Final save
-
 np.save(
     "X.npy",
     np.array(X, dtype=np.float32)
